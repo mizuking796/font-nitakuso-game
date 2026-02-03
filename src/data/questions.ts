@@ -1,5 +1,5 @@
 import type { FontPair, Difficulty } from './fonts';
-import { createFontPair, getDifficulty, isSameFamily } from './fonts';
+import { createFontPair, getDifficulty, isSameFamily, isSameFamilyGroup, getFontBaseName, extremePairs } from './fonts';
 import { getLoadedFonts } from '../utils/fontLoader';
 import { getRandomChar } from './charPool';
 
@@ -20,11 +20,58 @@ function shuffle<T>(array: T[]): T[] {
   return result;
 }
 
-// Find font pairs matching a difficulty level
+// Track usage of font family groups (max 2 per game)
+class FamilyGroupTracker {
+  private usageCount: Map<string, number> = new Map();
+  private maxPerGroup: number;
+
+  constructor(maxPerGroup: number = 2) {
+    this.maxPerGroup = maxPerGroup;
+  }
+
+  canUse(fontName: string): boolean {
+    const baseName = getFontBaseName(fontName);
+    const count = this.usageCount.get(baseName) || 0;
+    return count < this.maxPerGroup;
+  }
+
+  canUsePair(fontA: string, fontB: string): boolean {
+    const baseA = getFontBaseName(fontA);
+    const baseB = getFontBaseName(fontB);
+
+    // If same family group, count as 1 usage
+    if (baseA === baseB) {
+      const count = this.usageCount.get(baseA) || 0;
+      return count + 1 <= this.maxPerGroup;
+    }
+
+    // Different groups, check both
+    const countA = this.usageCount.get(baseA) || 0;
+    const countB = this.usageCount.get(baseB) || 0;
+    return countA < this.maxPerGroup && countB < this.maxPerGroup;
+  }
+
+  markUsed(fontName: string): void {
+    const baseName = getFontBaseName(fontName);
+    const count = this.usageCount.get(baseName) || 0;
+    this.usageCount.set(baseName, count + 1);
+  }
+
+  markPairUsed(fontA: string, fontB: string): void {
+    this.markUsed(fontA);
+    // Don't double-count if same family group
+    if (getFontBaseName(fontA) !== getFontBaseName(fontB)) {
+      this.markUsed(fontB);
+    }
+  }
+}
+
+// Find font pairs matching a difficulty level (excluding same family group for non-extreme)
 function findPairsForDifficulty(
   fonts: string[],
   targetDifficulty: Difficulty,
-  count: number
+  count: number,
+  tracker: FamilyGroupTracker
 ): [string, string][] {
   const pairs: [string, string][] = [];
   const shuffledFonts = shuffle(fonts);
@@ -33,6 +80,16 @@ function findPairsForDifficulty(
     for (let j = i + 1; j < shuffledFonts.length && pairs.length < count; j++) {
       const fontA = shuffledFonts[i];
       const fontB = shuffledFonts[j];
+
+      // Skip same family group for non-extreme difficulties
+      if (targetDifficulty !== 'extreme' && isSameFamilyGroup(fontA, fontB)) {
+        continue;
+      }
+
+      // Check family group usage limit
+      if (!tracker.canUsePair(fontA, fontB)) {
+        continue;
+      }
 
       let difficulty: Difficulty;
       if (isSameFamily(fontA, fontB)) {
@@ -48,21 +105,6 @@ function findPairsForDifficulty(
   }
 
   return pairs;
-}
-
-// Find same-family pairs (extreme difficulty)
-function findSameFamilyPairs(fonts: string[]): [string, string][] {
-  const pairs: [string, string][] = [];
-
-  for (let i = 0; i < fonts.length; i++) {
-    for (let j = i + 1; j < fonts.length; j++) {
-      if (isSameFamily(fonts[i], fonts[j])) {
-        pairs.push([fonts[i], fonts[j]]);
-      }
-    }
-  }
-
-  return shuffle(pairs);
 }
 
 // Check if two pairs share any font
@@ -94,6 +136,27 @@ function getUniqueChars(count: number, difficulty: 'easy' | 'medium' | 'hard' | 
   return chars;
 }
 
+// Check if a pair can be used considering family group tracker and used fonts
+function canUsePairWithConstraints(
+  pair: [string, string],
+  tracker: FamilyGroupTracker,
+  usedFonts: Set<string>,
+  allowSameFamilyGroup: boolean
+): boolean {
+  // Check if fonts are already used
+  if (usedFonts.has(pair[0]) || usedFonts.has(pair[1])) {
+    return false;
+  }
+
+  // Check family group constraint
+  if (!allowSameFamilyGroup && isSameFamilyGroup(pair[0], pair[1])) {
+    return false;
+  }
+
+  // Check tracker limit
+  return tracker.canUsePair(pair[0], pair[1]);
+}
+
 // Generate 10 questions with specific structure
 export function generateQuestions(): Question[] {
   const loadedFonts = getLoadedFonts();
@@ -104,110 +167,174 @@ export function generateQuestions(): Question[] {
   }
 
   const questions: Question[] = [];
+  const tracker = new FamilyGroupTracker(2); // Max 2 usages per family group
+  const usedFonts = new Set<string>();
 
-  // Get candidate pairs
-  const easyCandidates = findPairsForDifficulty(loadedFonts, 'easy', 20);
-  let hardCandidates = findPairsForDifficulty(loadedFonts, 'hard', 20);
-  if (hardCandidates.length < 5) {
-    hardCandidates = [...hardCandidates, ...findPairsForDifficulty(loadedFonts, 'medium', 15)];
+  // Helper to select and mark a pair
+  const selectPair = (
+    candidates: [string, string][],
+    allowSameFamilyGroup: boolean,
+    previousPair?: [string, string]
+  ): [string, string] | null => {
+    for (const pair of candidates) {
+      if (!canUsePairWithConstraints(pair, tracker, usedFonts, allowSameFamilyGroup)) {
+        continue;
+      }
+      if (previousPair && sharesFont(pair, previousPair)) {
+        continue;
+      }
+      return pair;
+    }
+    return null;
+  };
+
+  const markPairUsed = (pair: [string, string]) => {
+    tracker.markPairUsed(pair[0], pair[1]);
+    usedFonts.add(pair[0]);
+    usedFonts.add(pair[1]);
+  };
+
+  // Get all candidate pairs (without marking them as used yet)
+  const tempTracker = new FamilyGroupTracker(999); // No limit for candidate generation
+  const easyCandidates = findPairsForDifficulty(loadedFonts, 'easy', 50, tempTracker);
+  let hardCandidates = findPairsForDifficulty(loadedFonts, 'hard', 50, tempTracker);
+  if (hardCandidates.length < 10) {
+    hardCandidates = [...hardCandidates, ...findPairsForDifficulty(loadedFonts, 'medium', 30, tempTracker)];
   }
-  const extremeCandidates = findSameFamilyPairs(loadedFonts);
 
-  // Q1-3: Same font pair, different chars
-  const pair1 = easyCandidates[0] || [loadedFonts[0], loadedFonts[1]];
-  const chars1to3 = getUniqueChars(3, 'easy');
-  for (let i = 0; i < 3; i++) {
+  // Q1-2: Same font pair, different chars (easy, no same family group)
+  let pair1 = selectPair(easyCandidates, false);
+  if (!pair1) {
+    // Fallback: use first two different fonts
+    const shuffled = shuffle(loadedFonts);
+    pair1 = [shuffled[0], shuffled[1]];
+  }
+  markPairUsed(pair1);
+
+  const chars1to2 = getUniqueChars(2, 'easy');
+  for (let i = 0; i < 2; i++) {
     questions.push({
       id: i + 1,
       fontPair: createFontPair(pair1[0], pair1[1]),
-      char: chars1to3[i],
+      char: chars1to2[i],
       correctSide: Math.random() < 0.5 ? 'left' : 'right',
     });
   }
 
-  // Q4-5: Different font pair from Q1-3, same pair for both
-  let pair2 = easyCandidates.find(p => !sharesFont(p, pair1)) || easyCandidates[1];
-  if (!pair2 || sharesFont(pair2, pair1)) {
-    // Fallback: create a random pair
-    const available = loadedFonts.filter(f => f !== pair1[0] && f !== pair1[1]);
+  // Q3-4: Different font pair from Q1-2 (easy, no same family group)
+  let pair2 = selectPair(easyCandidates, false, pair1);
+  if (!pair2) {
+    // Fallback
+    const available = loadedFonts.filter(f => !usedFonts.has(f));
     if (available.length >= 2) {
       pair2 = [available[0], available[1]];
     } else {
-      pair2 = easyCandidates[1] || pair1;
+      pair2 = [loadedFonts[0], loadedFonts[1]];
     }
   }
-  const chars4to5 = getUniqueChars(2, 'easy');
+  markPairUsed(pair2);
+
+  const chars3to4 = getUniqueChars(2, 'easy');
   for (let i = 0; i < 2; i++) {
     questions.push({
-      id: 4 + i,
+      id: 3 + i,
       fontPair: createFontPair(pair2[0], pair2[1]),
-      char: chars4to5[i],
+      char: chars3to4[i],
       correctSide: Math.random() < 0.5 ? 'left' : 'right',
     });
   }
 
-  // Q6-8: Each different font pair, no consecutive sharing
-  const usedFonts = new Set([pair1[0], pair1[1], pair2[0], pair2[1]]);
+  // Q5-8: Each different font pair (hard, no same family group)
   const hardPairs: [string, string][] = [];
+  let prevHardPair: [string, string] | undefined;
 
-  for (const candidate of hardCandidates) {
-    if (hardPairs.length >= 3) break;
-
-    // Check not sharing with used fonts
-    if (usedFonts.has(candidate[0]) || usedFonts.has(candidate[1])) continue;
-
-    // Check not sharing with previous hard pair
-    if (hardPairs.length > 0 && sharesFont(candidate, hardPairs[hardPairs.length - 1])) continue;
-
-    hardPairs.push(candidate);
-    usedFonts.add(candidate[0]);
-    usedFonts.add(candidate[1]);
+  for (let i = 0; i < 4; i++) {
+    let pair = selectPair(hardCandidates, false, prevHardPair);
+    if (!pair) {
+      // Fallback: find any available pair
+      const available = loadedFonts.filter(f => !usedFonts.has(f) && tracker.canUse(f));
+      if (available.length >= 2) {
+        pair = [available[0], available[1]];
+      } else {
+        // Last resort
+        const shuffled = shuffle(loadedFonts);
+        pair = [shuffled[0], shuffled[1]];
+      }
+    }
+    hardPairs.push(pair);
+    markPairUsed(pair);
+    prevHardPair = pair;
   }
 
-  // Fill if not enough
-  while (hardPairs.length < 3) {
-    const shuffled = shuffle(loadedFonts);
-    for (let i = 0; i < shuffled.length - 1; i++) {
-      const candidate: [string, string] = [shuffled[i], shuffled[i + 1]];
-      if (hardPairs.length > 0 && sharesFont(candidate, hardPairs[hardPairs.length - 1])) continue;
-      hardPairs.push(candidate);
+  const chars5to8 = getUniqueChars(4, 'hard');
+  for (let i = 0; i < 4; i++) {
+    questions.push({
+      id: 5 + i,
+      fontPair: createFontPair(hardPairs[i][0], hardPairs[i][1]),
+      char: chars5to8[i],
+      correctSide: Math.random() < 0.5 ? 'left' : 'right',
+    });
+  }
+
+  // Q9-10: Extreme difficulty - use hardcoded same-family pairs
+  // Filter to pairs where both fonts are loaded
+  const loadedFontSet = new Set(loadedFonts);
+  const availableExtremePairs = shuffle(
+    extremePairs.filter(([a, b]) => loadedFontSet.has(a) && loadedFontSet.has(b))
+  );
+
+  // Select first extreme pair
+  let extremePair1: [string, string] | null = null;
+  for (const pair of availableExtremePairs) {
+    if (tracker.canUsePair(pair[0], pair[1])) {
+      extremePair1 = pair;
       break;
     }
-    if (hardPairs.length < 3 && shuffled.length >= 2) {
-      hardPairs.push([shuffled[0], shuffled[1]]);
+  }
+  if (!extremePair1) {
+    // Fallback: find any same-family pair from loaded fonts
+    for (let i = 0; i < loadedFonts.length && !extremePair1; i++) {
+      for (let j = i + 1; j < loadedFonts.length && !extremePair1; j++) {
+        if (isSameFamily(loadedFonts[i], loadedFonts[j]) &&
+            tracker.canUsePair(loadedFonts[i], loadedFonts[j])) {
+          extremePair1 = [loadedFonts[i], loadedFonts[j]];
+        }
+      }
     }
   }
-
-  const chars6to8 = getUniqueChars(3, 'hard');
-  for (let i = 0; i < 3; i++) {
-    questions.push({
-      id: 6 + i,
-      fontPair: createFontPair(hardPairs[i][0], hardPairs[i][1]),
-      char: chars6to8[i],
-      correctSide: Math.random() < 0.5 ? 'left' : 'right',
-    });
-  }
-
-  // Q9-10: Same family pairs (extreme), different from each other
-  let extremePair1: [string, string] | undefined = extremeCandidates[0];
-  let extremePair2: [string, string] | undefined;
-
-  // Fallback if not enough same-family pairs
   if (!extremePair1) {
+    // Last fallback
     const shuffled = shuffle(loadedFonts);
     extremePair1 = [shuffled[0], shuffled[1]];
   }
+  markPairUsed(extremePair1);
 
-  extremePair2 = extremeCandidates.find(p => p && extremePair1 && !sharesFont(p, extremePair1));
-
-  if (!extremePair2) {
-    const available = loadedFonts.filter(f => f !== extremePair1![0] && f !== extremePair1![1]);
-    if (available.length >= 2) {
-      extremePair2 = [available[0], available[1]];
-    } else {
-      extremePair2 = extremePair1;
+  // Select second extreme pair (different from first)
+  let extremePair2: [string, string] | null = null;
+  for (const pair of availableExtremePairs) {
+    if (!sharesFont(pair, extremePair1) && tracker.canUsePair(pair[0], pair[1])) {
+      extremePair2 = pair;
+      break;
     }
   }
+  if (!extremePair2) {
+    // Fallback: find any same-family pair from loaded fonts
+    for (let i = 0; i < loadedFonts.length && !extremePair2; i++) {
+      for (let j = i + 1; j < loadedFonts.length && !extremePair2; j++) {
+        if (isSameFamily(loadedFonts[i], loadedFonts[j]) &&
+            !sharesFont([loadedFonts[i], loadedFonts[j]], extremePair1) &&
+            tracker.canUsePair(loadedFonts[i], loadedFonts[j])) {
+          extremePair2 = [loadedFonts[i], loadedFonts[j]];
+        }
+      }
+    }
+  }
+  if (!extremePair2) {
+    // Last fallback
+    const shuffled = shuffle(loadedFonts.filter(f => !extremePair1!.includes(f)));
+    extremePair2 = shuffled.length >= 2 ? [shuffled[0], shuffled[1]] : extremePair1;
+  }
+  markPairUsed(extremePair2);
 
   const chars9to10 = getUniqueChars(2, 'extreme');
   questions.push({

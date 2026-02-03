@@ -61,7 +61,7 @@ export const translations = {
     privacyThirdParty: '第三者提供',
     privacyThirdPartyDesc: '収集した情報を第三者に提供することはありません。',
 
-    shareText: 'フォントニタクソゲーで{total}問中{score}問正解！（正答率: {percentage}%）',
+    shareText: 'フォントニタクソゲーで{total}問中{score}問正解！（正答率: {percentage}%）\n\n{url}',
     copied: '結果をコピーしました！',
   },
   en: {
@@ -124,7 +124,7 @@ export const translations = {
     privacyThirdParty: 'Third Party Disclosure',
     privacyThirdPartyDesc: 'Collected information will not be disclosed to third parties.',
 
-    shareText: 'Font Nitakuso Game: {score}/{total} correct! (Accuracy: {percentage}%)',
+    shareText: 'Font Nitakuso Game: {score}/{total} correct! (Accuracy: {percentage}%)\n\n{url}',
     copied: 'Result copied!',
   },
 } as const;

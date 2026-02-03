@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
 import type { Answer } from '../hooks/useGame';
-import { sendStats } from '../utils/stats';
 import { useLanguage } from '../i18n/LanguageContext';
+
+const GAME_URL = 'https://mizuking796.github.io/font-nitakuso-game/';
 
 interface ResultProps {
   score: number;
@@ -15,18 +15,15 @@ export function Result({ score, total, answers, onRetry, onHome }: ResultProps) 
   const { t } = useLanguage();
   const percentage = Math.round((score / total) * 100);
 
-  useEffect(() => {
-    sendStats(score, total, answers);
-  }, [score, total, answers]);
-
   const handleShare = () => {
     const text = t.shareText
       .replace('{total}', String(total))
       .replace('{score}', String(score))
-      .replace('{percentage}', String(percentage));
+      .replace('{percentage}', String(percentage))
+      .replace('{url}', GAME_URL);
 
     if (navigator.share) {
-      navigator.share({ text });
+      navigator.share({ text, url: GAME_URL });
     } else {
       navigator.clipboard.writeText(text);
       alert(t.copied);

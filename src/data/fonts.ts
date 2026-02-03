@@ -93,7 +93,18 @@ export function getDifficulty(fontA: string, fontB: string): Difficulty {
   return 'medium';
 }
 
+// Get the base family name (first word) for grouping
+export function getFontBaseName(fontName: string): string {
+  return fontName.split(' ')[0];
+}
+
+// Check if two fonts are from the same family group (same first word)
+export function isSameFamilyGroup(fontA: string, fontB: string): boolean {
+  return getFontBaseName(fontA) === getFontBaseName(fontB);
+}
+
 // Check if two fonts are from the same family (extreme difficulty)
+// More strict: requires more similarity (first 2 words match)
 export function isSameFamily(fontA: string, fontB: string): boolean {
   // Extract base name (e.g., "Noto Sans" from "Noto Sans Display")
   const baseA = fontA.split(' ').slice(0, 2).join(' ');
@@ -106,6 +117,30 @@ export interface FontPair {
   fontB: FontDefinition;
   difficulty: Difficulty;
 }
+
+// Hardcoded extreme difficulty pairs - same family, very hard to distinguish
+export const extremePairs: [string, string][] = [
+  ['Barlow', 'Barlow Condensed'],
+  ['Barlow', 'Barlow Semi Condensed'],
+  ['Barlow Condensed', 'Barlow Semi Condensed'],
+  ['Noto Sans', 'Noto Sans Display'],
+  ['Fira Sans', 'Fira Sans Condensed'],
+  ['Fira Sans', 'Fira Sans Extra Condensed'],
+  ['Fira Sans Condensed', 'Fira Sans Extra Condensed'],
+  ['IBM Plex Sans', 'IBM Plex Serif'],
+  ['IBM Plex Sans', 'IBM Plex Mono'],
+  ['Saira', 'Saira Condensed'],
+  ['Encode Sans', 'Encode Sans Condensed'],
+  ['Lexend', 'Lexend Deca'],
+  ['Lexend', 'Lexend Exa'],
+  ['Lexend Deca', 'Lexend Exa'],
+  ['Londrina Solid', 'Londrina Shadow'],
+  ['Londrina Solid', 'Londrina Outline'],
+  ['Libre Caslon Display', 'Libre Caslon Text'],
+  ['Ubuntu', 'Ubuntu Condensed'],
+  ['Ubuntu', 'Ubuntu Mono'],
+  ['Asap', 'Asap Condensed'],
+];
 
 // Create a font pair with calculated difficulty
 export function createFontPair(fontAName: string, fontBName: string): FontPair {
