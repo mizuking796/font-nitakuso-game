@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/font-nitakuso-game/sw.js', { scope: '/font-nitakuso-game/' })})}

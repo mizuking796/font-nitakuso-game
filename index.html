@@ -2,12 +2,25 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/font-nitakuso-game/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>フォントニタクソゲー</title>
+
+    <!-- PWA -->
+    <link rel="icon" type="image/png" href="/font-nitakuso-game/favicon.png" />
+    <link rel="apple-touch-icon" href="/font-nitakuso-game/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0f0f1a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ニタクソ" />
+
+    <!-- OGP -->
+    <meta property="og:title" content="フォントニタクソゲー" />
+    <meta property="og:description" content="2つのフォント、見分けられる？" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mizuking796.github.io/font-nitakuso-game/" />
     <script type="module" crossorigin src="/font-nitakuso-game/assets/index-BK-oa6eK.js"></script>
     <link rel="stylesheet" crossorigin href="/font-nitakuso-game/assets/index-CNcHEiwS.css">
-  </head>
+  <link rel="manifest" href="/font-nitakuso-game/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/font-nitakuso-game/registerSW.js"></script></head>
   <body>
     <div id="root"></div>
   </body>
